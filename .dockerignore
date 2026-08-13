@@ -1,0 +1,5 @@
+.git
+ve
+**/__pycache__
+*.pyc
+mysite/staticfiles

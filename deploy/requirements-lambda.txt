@@ -1,0 +1,13 @@
+# Pinned to the versions this project is known to run on locally, so the
+# container reproduces the development environment exactly. `requests` is
+# omitted: nothing in the codebase imports it.
+Django==3.2.15
+scikit-learn==1.2.2
+scipy==1.10.1
+numpy==1.26.4
+
+# Serving only. Gunicorn is the HTTP server the Lambda Web Adapter talks to;
+# WhiteNoise serves the collected static files from inside the same process,
+# since Lambda has no web server in front of it.
+gunicorn==21.2.0
+whitenoise==6.6.0
