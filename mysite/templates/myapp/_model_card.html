@@ -1,0 +1,205 @@
+{% comment %}
+Explains what the model is and how it has actually behaved on data it
+never trained on. Included by both the form page and the result page, so
+the numbers a user sees before predicting are the same ones they see after.
+Expects `model` in context (myapp.model.model_info()).
+{% endcomment %}
+
+<div class="plate">
+  <div class="plate-title">
+    <span class="eyebrow">01</span>
+    <h2>What this model does</h2>
+  </div>
+
+  <p>
+    You give it <strong>four measurements</strong> from a single iris flower, in centimetres.
+    It returns <strong>one of three species</strong>, together with how confident it is in each.
+    It cannot answer anything else &mdash; it has only ever seen these three species, so an orchid
+    would still come back labelled as an iris.
+  </p>
+
+  <div class="row g-4 mt-1">
+    <div class="col-md-6">
+      <span class="eyebrow">Takes in</span>
+      <ul class="mt-2 mb-0 ps-3">
+        {% for field in model.fields %}
+          <li{% if not field.is_used %} style="opacity: .5; text-decoration: line-through;"{% endif %}>
+            <strong>{{ field.label }}</strong>
+            <span class="num range">{{ field.min }}&ndash;{{ field.max }} cm</span>
+            {% if not field.is_used %}<span class="range">ignored</span>{% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+    <div class="col-md-6">
+      <span class="eyebrow">Gives back</span>
+      <ul class="list-unstyled mt-2 mb-0">
+        {% for name in model.classes %}
+          <li class="sp-{{ name }} mb-1"><span class="species-chip">Iris {{ name }}</span></li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+
+  <p class="mt-4 mb-0" style="font-size: .88rem; color: var(--ink-soft);">
+    <strong>Method:</strong> {{ model.algorithm }}.
+    Trained on {{ model.n_train }} flowers from the {{ model.dataset }}, with
+    {{ model.n_test }} held back and never shown to it during training.
+    It draws straight boundaries between species &mdash; it does not memorise examples.
+  </p>
+
+  <div class="mt-4 pt-3" style="border-top: 1px solid var(--rule);">
+    {% if model.is_default %}
+      <span class="eyebrow">Baseline configuration</span>
+      <p class="mb-0 mt-1" style="font-size: .86rem; color: var(--ink-soft);">
+        The model is running with its default settings.
+        <a href="{% url 'configuration' %}" class="link-quiet">Change them</a>
+        to see how its behaviour shifts.
+      </p>
+    {% else %}
+      <span class="eyebrow" style="color: var(--iris);">Modified configuration</span>
+      <p class="mb-2 mt-1" style="font-size: .86rem; color: var(--ink-soft);">
+        These numbers describe a model you have reconfigured, not the baseline:
+      </p>
+      <ul class="mb-0 ps-3" style="font-size: .86rem;">
+        {% for difference in model.differences %}
+          <li>
+            <span class="num">{{ difference.name }}</span>:
+            <strong class="num">{{ difference.current }}</strong>
+            <span style="color: var(--ink-soft);">(default <span class="num">{{ difference.default }}</span>)</span>
+          </li>
+        {% endfor %}
+      </ul>
+      <p class="mb-0 mt-2" style="font-size: .86rem;">
+        <a href="{% url 'configuration' %}" class="link-quiet">Adjust or restore the defaults</a>
+      </p>
+    {% endif %}
+  </div>
+</div>
+
+{% if not model.converged %}
+  <div class="plate" style="border-left: 3px solid #b4462f;">
+    <strong style="color: #b4462f;">This model did not finish fitting.</strong>
+    <p class="mb-0 mt-1" style="font-size: .88rem; color: var(--ink-soft);">
+      Training hit its iteration limit before settling, so every number below describes a model
+      that was cut off mid-fit. That is a real configuration effect, not a display glitch.
+    </p>
+  </div>
+{% endif %}
+
+<div class="plate">
+  <div class="plate-title">
+    <span class="eyebrow">02</span>
+    <h2>How it behaved on unseen flowers</h2>
+  </div>
+
+  {% if matrix_shown %}
+    <p>
+      Every one of the {{ model.n_test }} held-out flowers was passed through the model and its
+      answer compared against the true species. That is the matrix shown with your result above,
+      where the highlighted column is the species you were just given.
+    </p>
+  {% else %}
+    <p>
+      Every one of the {{ model.n_test }} held-out flowers was passed through the model and its answer
+      compared against the true species. Each row below is a real species; each column is what the
+      model called it. <strong>Counts on the diagonal are correct</strong>; anything off the diagonal
+      is a mistake.
+    </p>
+
+    {% include 'myapp/_confusion_matrix.html' %}
+  {% endif %}
+
+  <div class="row g-4 mt-3 align-items-center">
+    <div class="col-md-4">
+      <span class="eyebrow">Accuracy</span>
+      <div class="num" style="font-family: 'Fraunces', serif; font-size: 2.6rem; line-height: 1.1;">{{ model.accuracy_percent }}%</div>
+      <div style="font-size: .82rem; color: var(--ink-soft);">
+        {{ model.errors }} mistake{{ model.errors|pluralize }} out of {{ model.n_test }}
+      </div>
+    </div>
+    <div class="col-md-8">
+      <table class="table table-sm mb-0" style="font-size: .85rem;">
+        <thead>
+          <tr class="eyebrow">
+            <th>Species</th>
+            <th class="text-end" title="Of the flowers it called this species, how many really were">Precision</th>
+            <th class="text-end" title="Of the flowers that really were this species, how many it caught">Recall</th>
+            <th class="text-end">Tested on</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in model.per_class %}
+            <tr class="sp-{{ row.name }}">
+              <td><span class="species-chip">{{ row.name }}</span></td>
+              <td class="text-end num">{{ row.precision }}</td>
+              <td class="text-end num">{{ row.recall }}</td>
+              <td class="text-end num">{{ row.support }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {% if model.errors == 0 %}
+    <p class="mt-4 mb-0" style="font-size: .86rem; color: var(--ink-soft); border-left: 3px solid var(--iris); padding-left: .85rem;">
+      <strong>Read this carefully.</strong> A perfect score here does not mean a perfect model.
+      The test set is only {{ model.n_test }} flowers, and iris is an unusually easy, clean dataset &mdash;
+      setosa is entirely separable from the other two by petal size alone. Expect versicolor and
+      virginica to be confused on real-world measurements, since they genuinely overlap.
+      Treat low-confidence answers below as the honest signal.
+    </p>
+  {% else %}
+    <p class="mt-4 mb-0" style="font-size: .86rem; color: var(--ink-soft); border-left: 3px solid #b4462f; padding-left: .85rem;">
+      <strong>Where it goes wrong.</strong> The outlined cells above are the model's real failure mode.
+      Versicolor and virginica overlap genuinely in petal size, so confusion between those two is
+      expected; treat low-confidence answers between them with care.
+    </p>
+  {% endif %}
+</div>
+
+<div class="plate">
+  <div class="plate-title">
+    <span class="eyebrow">03</span>
+    <h2>What it learned to look for</h2>
+  </div>
+
+  <p>
+    The model holds one weight per measurement per species. A bar to the
+    <strong>right</strong> means a larger measurement pushes it <em>toward</em> that species; to the
+    <strong>left</strong> means it pushes <em>away</em>. Longer bar, stronger pull.
+  </p>
+
+  <div class="row g-4 mt-1">
+    {% for entry in model.coefficients %}
+      <div class="col-lg-4 sp-{{ entry.name }}">
+        <div class="species-chip mb-2"><strong>{{ entry.name }}</strong></div>
+        {% for weight in entry.weights %}
+          <div class="weight-row">
+            <span>{{ weight.feature }}</span>
+            <span class="weight-track">
+              {% comment %}Halved: each side of the centre line is only half the track{% endcomment %}
+              <span class="weight-fill {% if weight.is_positive %}is-positive{% else %}is-negative{% endif %}"
+                    style="width: calc({{ weight.magnitude }}% / 2);"></span>
+            </span>
+            <span class="num text-end" style="font-size: .78rem;">{{ weight.value }}</span>
+          </div>
+        {% endfor %}
+      </div>
+    {% endfor %}
+  </div>
+
+  {% if model.uses_petals %}
+    <p class="mt-4 mb-0" style="font-size: .86rem; color: var(--ink-soft);">
+      Petal measurements carry far more weight than sepal measurements &mdash; that is the single most
+      useful thing to know about this model's behaviour. Sepal size barely moves the answer.
+    </p>
+  {% else %}
+    <p class="mt-4 mb-0" style="font-size: .86rem; color: var(--ink-soft);">
+      This configuration has taken the petal measurements away, so the model is left leaning on the
+      weakest signals it has. That is why it now confuses versicolor and virginica: those two
+      overlap heavily in sepal size, and the measurements that told them apart are switched off.
+    </p>
+  {% endif %}
+</div>

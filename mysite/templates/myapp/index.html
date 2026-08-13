@@ -1,20 +1,79 @@
 {% extends 'base.html' %}
-{% load static %}
 {% block content %}
-<form method="post" action="{% url 'predict_species' %}">
-    {% csrf_token %}
-    <label for="sepal_length">Sepal length:</label><br>
-    <input type="text" name="sepal_length" required><br>
-    <label for="sepal_width">Sepal width:</label><br>
-    <input type="text" name="sepal_width" required><br>
-    <label for="petal_length">Petal length:</label><br>
-    <input type="text" name="petal_length" required><br>
-    <label for="petal_width">Petal width:</label><br>
-    <input type="text" name="petal_width" required><br><br>
-    <input type="submit" value="Predict">
-</form>
-<a href="{{ request.get_full_path }}">Reload</a>
+<div class="container" style="max-width: 960px; padding-top: 2.5rem; padding-bottom: 4rem;">
+
+  <header class="mb-4">
+    <span class="eyebrow">Fisher iris &middot; logistic regression</span>
+    <h1 style="font-size: 2.6rem; margin: .3rem 0 .4rem;">Identify an iris</h1>
+    <p style="max-width: 46rem; color: var(--ink-soft);">
+      Measure a flower, enter the four numbers, and the model will name the species and show you
+      how sure it is. Everything it knows, and everywhere it has been wrong, is documented below
+      the form.
+    </p>
+  </header>
+
+  <div class="plate">
+    <div class="plate-title">
+      <span class="eyebrow">00</span>
+      <h2>Measurements</h2>
+    </div>
+
+    {% if form.errors %}
+      <div class="mb-4" style="border-left: 3px solid #b4462f; padding-left: .85rem;">
+        <strong style="color: #b4462f;">That input could not be used.</strong>
+        <span style="font-size: .88rem; color: var(--ink-soft);">
+          Every measurement must be a number between 0 and 20 centimetres.
+        </span>
+      </div>
+    {% endif %}
+
+    <form method="post" action="{% url 'predict_species' %}" novalidate>
+      {% csrf_token %}
+      <div class="row g-4">
+        {% for field in form %}
+          <div class="col-md-6">
+            <div class="field{% if not field.field.is_used %} is-ignored{% endif %}">
+              {# id_for_label and the widget id finally agree, so the label is clickable #}
+              <label for="{{ field.id_for_label }}">
+                {{ field.label }}
+                {% if not field.field.is_used %}<span class="ignored-tag">ignored by this config</span>{% endif %}
+              </label>
+              <span class="hint">{{ field.help_text }}</span>
+              {{ field }}
+              <div class="range">{{ field.field.range_text }}</div>
+              {% for error in field.errors %}
+                <div class="field-error">{{ error }}</div>
+              {% endfor %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+
+      <div class="d-flex align-items-center gap-3 flex-wrap mt-2">
+        <button type="submit" class="btn-predict">Identify species</button>
+        <button type="button" class="btn btn-link link-quiet p-0" id="fill-example">
+          Fill with a known setosa
+        </button>
+      </div>
+    </form>
+  </div>
+
+  {% include 'myapp/_model_card.html' %}
+
+</div>
 {% endblock %}
 
 {% block scripts %}
+<script>
+  // Worked example, so a first-time user can walk the whole flow without
+  // needing a real flower in front of them.
+  document.getElementById('fill-example').addEventListener('click', function () {
+    var example = {{ example_input|safe }};
+    Object.keys(example).forEach(function (key) {
+      var input = document.getElementById('id_' + key);
+      if (input) { input.value = example[key]; }
+    });
+    document.getElementById('id_sepal_length').focus();
+  });
+</script>
 {% endblock %}

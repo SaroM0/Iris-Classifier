@@ -1,9 +1,106 @@
 {% extends 'base.html' %}
-{% load static %}
 {% block content %}
-    {{ json_response }}
-{% endblock %}
+<div class="container" style="max-width: 960px; padding-top: 2.5rem; padding-bottom: 4rem;">
 
-{% block scripts %}
-    <!--script src="/static/polls.js"></script-->
+  <a href="{% url 'index' %}" class="link-quiet" style="font-size: .85rem;">&larr; Measure another flower</a>
+
+  <div class="plate mt-3 sp-{{ result.species }}">
+    <div class="plate-title">
+      <span class="eyebrow">Result</span>
+    </div>
+
+    <div class="row g-4 align-items-start">
+      <div class="col-md-5">
+        <span class="eyebrow">Identified as</span>
+        <h1 class="species-name" style="font-size: 2.9rem; line-height: 1.1; margin: .2rem 0 .3rem;">
+          Iris<br>{{ result.species }}
+        </h1>
+        <div class="num" style="font-size: 1.1rem;">{{ result.confidence }}% confident</div>
+        {% if result.confidence < 70 %}
+          <p class="mt-3 mb-0" style="font-size: .85rem; color: #b4462f; border-left: 3px solid #b4462f; padding-left: .75rem;">
+            This is a close call. The measurements sit near the boundary between species, which is
+            exactly where this model is least reliable &mdash; see the confusion matrix below.
+          </p>
+        {% endif %}
+      </div>
+
+      <div class="col-md-7">
+        <span class="eyebrow">Full distribution</span>
+        <div class="mt-3">
+          {% for row in result.probabilities %}
+            <div class="prob-row sp-{{ row.name }}{% if row.is_predicted %} is-winner{% endif %}">
+              <span class="species-chip">{{ row.name }}</span>
+              <span class="prob-track">
+                <span class="prob-fill" style="width: {{ row.percent }}%; animation-delay: {{ forloop.counter0 }}00ms;"></span>
+              </span>
+              <span class="prob-value num">{{ row.percent }}%</span>
+            </div>
+          {% endfor %}
+        </div>
+        <p class="mt-3 mb-0" style="font-size: .8rem; color: var(--ink-soft);">
+          These three always sum to 100%. The model never abstains &mdash; it always picks the
+          largest, however small the gap.
+        </p>
+      </div>
+    </div>
+
+    <div class="mt-4 pt-3" style="border-top: 1px solid var(--rule);">
+      <span class="eyebrow">How often this answer is right</span>
+      <div class="row g-4 mt-1">
+        <div class="col-lg-7">
+          <p style="font-size: .88rem; color: var(--ink-soft);">
+            Every call the model made on the {{ model.n_test }} flowers it never trained on. The
+            highlighted column is <strong class="species-name">{{ result.species }}</strong> &mdash; what
+            it just told you. Counts on the diagonal are correct; anything off it is a mistake.
+          </p>
+          {% include 'myapp/_confusion_matrix.html' with highlight=result.species %}
+        </div>
+        <div class="col-lg-5">
+          {% for row in model.per_class %}
+            {% if row.name == result.species %}
+              <div class="sp-{{ row.name }}">
+                <div class="num" style="font-family: 'Fraunces', serif; font-size: 2.2rem; line-height: 1.1;">
+                  {% widthratio row.precision 1 100 %}%
+                </div>
+                <p style="font-size: .86rem; color: var(--ink-soft);">
+                  of the time the model said <strong class="species-name">{{ row.name }}</strong> on a
+                  held-out flower, it was right.
+                </p>
+                <div class="num" style="font-size: 1.3rem;">{% widthratio row.recall 1 100 %}%</div>
+                <p class="mb-0" style="font-size: .86rem; color: var(--ink-soft);">
+                  of the real {{ row.name }} flowers were caught. It was tested on
+                  <span class="num">{{ row.support }}</span> of them.
+                </p>
+              </div>
+            {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-4 pt-3" style="border-top: 1px solid var(--rule);">
+      <span class="eyebrow">Measurements you entered</span>
+      <div class="row g-3 mt-1">
+        {% for item in measurements %}
+          <div class="col-6 col-md-3"{% if not item.is_used %} style="opacity: .45;"{% endif %}>
+            <div style="font-size: .8rem; color: var(--ink-soft);">{{ item.label }}</div>
+            <div class="num" style="font-size: 1.25rem;">{{ item.value }} <span style="font-size: .8rem; color: var(--ink-soft);">cm</span></div>
+            {% if item.is_used %}
+              <div class="range">typical {{ item.min }}&ndash;{{ item.max }}</div>
+            {% else %}
+              <div class="range">not used by this configuration</div>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  {% include 'myapp/_model_card.html' with matrix_shown=True %}
+
+  <div class="mt-4">
+    <a href="{% url 'index' %}" class="btn-predict d-inline-block text-decoration-none">Measure another flower</a>
+  </div>
+
+</div>
 {% endblock %}

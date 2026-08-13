@@ -1,0 +1,40 @@
+{% comment %}
+The confusion matrix table on its own, so it can appear both as general
+model documentation and inside a result with one species highlighted.
+
+Expects `model` in context. Optional `highlight`: a species name whose
+predicted-column is emphasised, used on the result page to tie the matrix
+to the answer just given.
+{% endcomment %}
+
+<div class="table-responsive mt-3">
+  <table class="matrix">
+    <thead>
+      <tr>
+        <th></th>
+        <th colspan="{{ model.classes|length }}" class="matrix-axis">Model predicted &rarr;</th>
+      </tr>
+      <tr>
+        <th></th>
+        {% for name in model.classes %}
+          <th{% if name == highlight %} class="is-highlighted"{% endif %}>{{ name }}</th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in model.confusion_rows %}
+        <tr>
+          <th class="sp-{{ row.true_label }}"><span class="species-chip">{{ row.true_label }}</span></th>
+          {% for cell in row.cells %}
+            <td style="--share: {{ cell.share }}"
+                class="{% if cell.is_error %}is-error{% elif cell.is_correct %}is-correct{% endif %}{% if cell.count == 0 %} is-empty{% endif %}{% if cell.predicted_label == highlight %} is-highlighted{% endif %}"
+                title="{{ cell.count }} true {{ row.true_label }} predicted as {{ cell.predicted_label }}">
+              {{ cell.count }}
+            </td>
+          {% endfor %}
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="matrix-axis mt-2 mb-0">&darr; True species</p>

@@ -1,0 +1,121 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container" style="max-width: 960px; padding-top: 2.5rem; padding-bottom: 4rem;">
+
+  <a href="{% url 'index' %}" class="link-quiet" style="font-size: .85rem;">&larr; Back to the form</a>
+
+  <header class="mb-4 mt-3">
+    <span class="eyebrow">Experiment</span>
+    <h1 style="font-size: 2.6rem; margin: .3rem 0 .4rem;">Model configuration</h1>
+    <p style="max-width: 46rem; color: var(--ink-soft);">
+      Change any setting below and the model is retrained immediately on the same 150 flowers.
+      Everything the app reports &mdash; the confusion matrix, the accuracy, the weights &mdash;
+      is recomputed from your settings, so you can watch the behaviour move.
+    </p>
+  </header>
+
+  {% if retrain %}
+    <div class="plate mb-4" style="border-left: 3px solid var(--iris);">
+      <span class="eyebrow">Retrained</span>
+      <div class="d-flex align-items-baseline gap-3 flex-wrap mt-2">
+        <span class="num" style="font-size: 1.6rem;">{{ retrain.before }}%</span>
+        <span style="color: var(--ink-soft);">&rarr;</span>
+        <span class="num" style="font-size: 2.2rem; font-family: 'Fraunces', serif;">{{ retrain.after }}%</span>
+        <span style="color: var(--ink-soft); font-size: .88rem;">accuracy on the held-out flowers</span>
+      </div>
+    </div>
+  {% endif %}
+
+  {% if not model.converged %}
+    <div class="plate mb-4" style="border-left: 3px solid #b4462f;">
+      <strong style="color: #b4462f;">The fit did not converge.</strong>
+      <p class="mb-0 mt-1" style="font-size: .88rem; color: var(--ink-soft);">
+        Training stopped after {{ model.configuration.max_iter }} iteration{{ model.configuration.max_iter|pluralize }}
+        without settling on a stable answer. The numbers below are real, but they describe a model
+        that was cut off mid-fit. Raise <span class="num">maximum iterations</span> to let it finish.
+      </p>
+    </div>
+  {% endif %}
+
+  <form method="post">
+    {% csrf_token %}
+
+    <div class="plate">
+      <div class="plate-title">
+        <span class="eyebrow">A</span>
+        <h2>How it fits</h2>
+      </div>
+      <div class="row g-4">
+        {% for field in form.estimator_fields %}
+          <div class="col-md-4">
+            <div class="field">
+              <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+              <span class="hint">{{ field.help_text }}</span>
+              {{ field }}
+              {% for error in field.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="plate">
+      <div class="plate-title">
+        <span class="eyebrow">B</span>
+        <h2>How the data is split</h2>
+      </div>
+      <div class="row g-4">
+        {% for field in form.split_fields %}
+          <div class="col-md-6">
+            <div class="field">
+              <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+              <span class="hint">{{ field.help_text }}</span>
+              {{ field }}
+              {% for error in field.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+      <p class="mb-0" style="font-size: .85rem; color: var(--ink-soft);">
+        Right now {{ model.n_train }} flowers are used for training and {{ model.n_test }} for scoring.
+      </p>
+    </div>
+
+    <div class="plate">
+      <div class="plate-title">
+        <span class="eyebrow">C</span>
+        <h2>Which measurements it may use</h2>
+      </div>
+      <p>
+        Uncheck a measurement and the model is retrained without it. Dropping both petal
+        measurements is the most dramatic change available here &mdash; petal size is what separates
+        the species, so accuracy falls sharply.
+      </p>
+      <div class="row g-3 mt-1">
+        {% for field in form.feature_fields %}
+          <div class="col-md-6">
+            <label class="d-flex align-items-center gap-2" style="font-weight: 700; font-size: .92rem; cursor: pointer;">
+              {{ field }} {{ field.label }}
+            </label>
+          </div>
+        {% endfor %}
+      </div>
+      {% if form.non_field_errors %}
+        <div class="field-error mt-3">{{ form.non_field_errors|join:" " }}</div>
+      {% endif %}
+    </div>
+
+    <div class="d-flex align-items-center gap-3 flex-wrap mt-4">
+      <button type="submit" class="btn-predict">Retrain the model</button>
+      <button type="submit" name="reset" value="1" class="btn btn-link link-quiet p-0">
+        Restore the defaults
+      </button>
+    </div>
+  </form>
+
+  <div class="mt-5">
+    {% include 'myapp/_model_card.html' %}
+  </div>
+
+</div>
+{% endblock %}

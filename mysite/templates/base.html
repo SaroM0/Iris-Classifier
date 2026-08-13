@@ -1,31 +1,257 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <!-- Required meta tags -->
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
 
-    <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous">
-    <link href="https://getbootstrap.com/docs/3.4/examples/signin/signin.css" rel="stylesheet" >
-    <title>Demo</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Karla:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <title>Iris Classifier</title>
+
+    <style>
+      :root {
+        --paper: #f4efe4;
+        --paper-deep: #ebe3d3;
+        --ink: #23261d;
+        --ink-soft: #5d6152;
+        --rule: #cdc3ad;
+        --iris: #5d4a8f;
+        --setosa: #2f6b52;
+        --versicolor: #a8622a;
+        --virginica: #5d4a8f;
+      }
+
+      body {
+        background-color: var(--paper);
+        /* faint ruled-paper texture, the way a field notebook page reads */
+        background-image:
+          repeating-linear-gradient(
+            0deg, transparent, transparent 31px, rgba(93, 74, 143, .05) 32px);
+        color: var(--ink);
+        font-family: 'Karla', system-ui, sans-serif;
+        font-size: 16px;
+        line-height: 1.55;
+      }
+
+      h1, h2, h3 {
+        font-family: 'Fraunces', Georgia, serif;
+        font-weight: 600;
+        letter-spacing: -.015em;
+      }
+
+      /* ---- shared furniture ---- */
+
+      .eyebrow {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: .7rem;
+        font-weight: 600;
+        letter-spacing: .18em;
+        text-transform: uppercase;
+        color: var(--ink-soft);
+      }
+
+      .num { font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; }
+
+      .plate {
+        background: #fffdf8;
+        border: 1px solid var(--rule);
+        border-radius: 2px;
+        padding: 1.75rem;
+        box-shadow: 0 1px 0 var(--rule), 0 14px 28px -22px rgba(35, 38, 29, .5);
+      }
+
+      .plate + .plate { margin-top: 1.5rem; }
+
+      .plate-title {
+        display: flex;
+        align-items: baseline;
+        gap: .75rem;
+        border-bottom: 2px solid var(--ink);
+        padding-bottom: .5rem;
+        margin-bottom: 1.25rem;
+      }
+
+      .plate-title h2 { font-size: 1.15rem; margin: 0; }
+
+      /* ---- navbar ---- */
+
+      .navbar { background: var(--ink) !important; border-bottom: 3px solid var(--iris); }
+      .navbar .navbar-brand {
+        font-family: 'Fraunces', Georgia, serif;
+        font-weight: 700;
+        letter-spacing: -.02em;
+        color: var(--paper);
+      }
+      .navbar .nav-link { font-size: .9rem; letter-spacing: .02em; }
+
+      /* ---- species colour coding, used everywhere a species is named ---- */
+
+      .sp-setosa { --species: var(--setosa); }
+      .sp-versicolor { --species: var(--versicolor); }
+      .sp-virginica { --species: var(--virginica); }
+
+      .species-name { color: var(--species, var(--ink)); font-weight: 700; }
+
+      .species-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: .4rem;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: .8rem;
+      }
+      .species-chip::before {
+        content: '';
+        width: .6rem;
+        height: .6rem;
+        border-radius: 50%;
+        background: var(--species, var(--ink));
+      }
+
+      /* ---- probability bars ---- */
+
+      .prob-row { display: grid; grid-template-columns: 8.5rem 1fr 4rem; gap: .85rem; align-items: center; margin-bottom: .6rem; }
+      .prob-track { background: var(--paper-deep); height: 1.4rem; border-radius: 1px; overflow: hidden; }
+      .prob-fill {
+        /* must be block: a bare inline span ignores width and height */
+        display: block;
+        height: 100%;
+        background: var(--species, var(--ink));
+        /* bars grow on load so the distribution reads as a measurement */
+        animation: grow .7s cubic-bezier(.2, .8, .3, 1) both;
+        transform-origin: left;
+      }
+      .prob-value { text-align: right; font-size: .9rem; }
+      .prob-row.is-winner .prob-value { font-weight: 600; }
+      .prob-row:not(.is-winner) { opacity: .62; }
+
+      @keyframes grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+      @media (prefers-reduced-motion: reduce) { .prob-fill { animation: none; } }
+
+      /* ---- confusion matrix ---- */
+
+      .matrix { border-collapse: collapse; font-family: 'IBM Plex Mono', monospace; }
+      .matrix th { font-weight: 500; font-size: .78rem; color: var(--ink-soft); padding: .4rem .6rem; }
+      .matrix thead th { border-bottom: 1px solid var(--rule); }
+      .matrix tbody th { text-align: right; border-right: 1px solid var(--rule); white-space: nowrap; }
+      .matrix td {
+        width: 4.4rem;
+        height: 3.1rem;
+        text-align: center;
+        font-size: 1.05rem;
+        border: 1px solid var(--paper-deep);
+        /* tint scales with the share of the true class landing in this cell */
+        background: color-mix(in srgb, var(--iris) calc(var(--share, 0) * .8%), #fffdf8);
+      }
+      .matrix td.is-correct { color: var(--ink); font-weight: 600; }
+      .matrix td.is-empty { color: #bdb5a3; }
+      .matrix td.is-error { outline: 2px solid #b4462f; outline-offset: -2px; color: #b4462f; font-weight: 600; }
+      /* the column of the species just predicted, tying the matrix to the result */
+      .matrix td.is-highlighted { box-shadow: inset 0 0 0 2px var(--iris); }
+      .matrix thead th.is-highlighted { color: var(--iris); font-weight: 700; border-bottom: 2px solid var(--iris); }
+      .matrix-axis { font-size: .72rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-soft); }
+
+      /* ---- weight bars: diverging from a centre line ---- */
+
+      .weight-row { display: grid; grid-template-columns: 7.5rem 1fr 3.5rem; gap: .6rem; align-items: center; margin-bottom: .3rem; font-size: .85rem; }
+      .weight-track { position: relative; height: 1rem; background: var(--paper-deep); }
+      .weight-track::before { content: ''; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--rule); }
+      .weight-fill { position: absolute; top: 0; height: 100%; background: var(--species, var(--ink)); }
+      .weight-fill.is-positive { left: 50%; }
+      .weight-fill.is-negative { right: 50%; background: #b0a795; }
+
+      /* ---- form ---- */
+
+      .field { margin-bottom: 1.15rem; }
+      .field label { font-weight: 700; font-size: .92rem; display: block; margin-bottom: .15rem; }
+      .field .hint { font-size: .82rem; color: var(--ink-soft); display: block; margin-bottom: .4rem; }
+      .field input {
+        width: 100%;
+        padding: .55rem .7rem;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 1rem;
+        background: var(--paper);
+        border: 1px solid var(--rule);
+        border-radius: 2px;
+        color: var(--ink);
+      }
+      .field input:focus { outline: 2px solid var(--iris); outline-offset: 1px; border-color: var(--iris); background: #fffdf8; }
+      .field .range { font-family: 'IBM Plex Mono', monospace; font-size: .74rem; color: var(--ink-soft); }
+      .field-error { color: #b4462f; font-size: .82rem; font-weight: 500; margin-top: .25rem; }
+
+      /* a measurement the active configuration does not feed to the model */
+      .field.is-ignored label, .field.is-ignored .hint, .field.is-ignored .range { opacity: .5; }
+      .field.is-ignored input { opacity: .55; border-style: dashed; }
+      .ignored-tag {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: .65rem;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+        color: var(--iris);
+        border: 1px solid var(--rule);
+        border-radius: 2px;
+        padding: .05rem .3rem;
+        margin-left: .4rem;
+        font-weight: 500;
+        opacity: 1;
+      }
+
+      /* config page inputs reuse the measurement input styling */
+      .config-input, select.config-input {
+        width: 100%;
+        padding: .55rem .7rem;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 1rem;
+        background: var(--paper);
+        border: 1px solid var(--rule);
+        border-radius: 2px;
+        color: var(--ink);
+      }
+      .config-input:focus { outline: 2px solid var(--iris); outline-offset: 1px; border-color: var(--iris); }
+      input[type="checkbox"] { width: 1.05rem; height: 1.05rem; accent-color: var(--iris); }
+
+      .btn-predict {
+        background: var(--ink);
+        color: var(--paper);
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: .85rem;
+        font-weight: 600;
+        letter-spacing: .12em;
+        text-transform: uppercase;
+        border: none;
+        border-radius: 2px;
+        padding: .8rem 1.6rem;
+        transition: background .18s ease;
+      }
+      .btn-predict:hover { background: var(--iris); color: #fff; }
+
+      .link-quiet { color: var(--iris); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+
+      /* keeps the built-in login page centred now that the old stylesheet is gone */
+      .form-signin { margin: 3rem auto; text-align: center; }
+    </style>
   </head>
-  <body class="text-center">
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+  <body>
+    <nav class="navbar navbar-expand-lg navbar-dark">
       <div class="container-fluid">
+        <a class="navbar-brand" href="/myapp">Iris Classifier</a>
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
           <span class="navbar-toggler-icon"></span>
         </button>
         <div class="collapse navbar-collapse" id="navbarSupportedContent">
-          <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+          <ul class="navbar-nav ms-auto mb-2 mb-lg-0">
             <li class="nav-item">
-              <a class="nav-link active" aria-current="page" href="/myapp">My APP</a>
+              <a class="nav-link" href="{% url 'index' %}">Identify</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="{% url 'configuration' %}">Configuration</a>
             </li>
             <li class="nav-item dropdown">
               <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                 Account
               </a>
-              <ul class="dropdown-menu" aria-labelledby="navbarDropdown">
+              <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="navbarDropdown">
                 <li><a class="dropdown-item" href="/accounts/logout">Sign Out</a></li>
               </ul>
             </li>
@@ -33,12 +259,10 @@
         </div>
       </div>
     </nav>
-    <div id="flash" class="bg-success text-white" style="display: none">
-      This is where the flash message goes
-    </div>
+
     {% block content %}{% endblock %}
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js" integrity="sha384-MrcW6ZMFYlzcLA8Nl+NtUVF0sA7MsXsP1UyJoMp4YLEuNSfAP+JcXn/tWtIaxVXM" crossorigin="anonymous"></script>
-    <script src="https://kit.fontawesome.com/8f633e5917.js" crossorigin="anonymous"></script>
     {% block scripts %}{% endblock %}
   </body>
 </html>
