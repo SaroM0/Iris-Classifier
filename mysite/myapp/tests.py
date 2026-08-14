@@ -435,6 +435,22 @@ class ViewTests(TestCase):
         self.assertIn('data-axis="C"', html)
         self.assertIn('data-axis="test_size"', html)
 
+    def test_surface_panel_carries_the_true_accuracy_for_calibration(self):
+        """The client anchors the baked grid to this value.
+
+        Without it, the sensitivity charts can disagree with the retrain
+        banner whenever the stored configuration has moved away from the
+        seed and measurements the grid was built with.
+        """
+        if surface._load() is None:
+            self.skipTest('no surface built; run manage.py build_surface')
+
+        info = classifier.model_info()
+        response = self.client.get(reverse('configuration'))
+
+        self.assertIn(f'data-live-accuracy="{info["accuracy_percent"]}"',
+                      response.content.decode())
+
     def test_configuration_page_works_without_a_surface(self):
         with mock.patch.object(surface, '_PATH', Path('/no/such/surface.json')), \
              mock.patch.dict(surface._cache, {'read': False, 'data': None}):

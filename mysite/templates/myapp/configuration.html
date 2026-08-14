@@ -24,7 +24,11 @@
         <span style="color: var(--ink-soft); font-size: .88rem;">accuracy on the held-out flowers</span>
       </div>
       {% if retrain.trajectory %}
-        <figure id="convergence" class="mt-3 mb-0">
+        <p class="mt-3 mb-0" style="font-size: .8rem; color: var(--ink-soft);">
+          The same configuration, stopped early at each point below and scored fresh &mdash;
+          a real fit at every step, not a snapshot of one run finishing.
+        </p>
+        <figure id="convergence" class="mt-2 mb-0">
           <figcaption class="d-flex justify-content-between align-items-baseline"
                       style="font-size: .8rem; color: var(--ink-soft); margin-bottom: .3rem;">
             <span id="convergence-status">Fitting&hellip;</span>
@@ -93,7 +97,7 @@
     </div>
 
     {% if surface %}
-      <div class="plate" id="surface-panel" hidden>
+      <div class="plate" id="surface-panel" data-live-accuracy="{{ model.accuracy_percent }}" hidden>
         <div class="plate-title">
           <span class="eyebrow">Live</span>
           <h2>What each control does</h2>
@@ -104,26 +108,43 @@
           settings are not independent, and watching the other two change shape is the
           point. Nothing here is saved until you retrain.
         </p>
+        <p style="font-size: .8rem; color: var(--ink-soft);">
+          <span class="num" style="color: var(--iris);">&#9679;</span> where you are now &nbsp;&middot;&nbsp;
+          <span class="num">&#8213;</span> accuracy as that one setting moves &nbsp;&middot;&nbsp;
+          <span class="num">&#8213;&#8213;</span> chance for three species (33%)
+        </p>
         <div class="row g-4 mt-1">
-          <div class="col-md-4"><figure class="surface-chart" data-chart="C"></figure></div>
-          <div class="col-md-4"><figure class="surface-chart" data-chart="max_iter"></figure></div>
-          <div class="col-md-4"><figure class="surface-chart" data-chart="test_size"></figure></div>
+          <div class="col-md-4">
+            <figure class="surface-chart" data-chart="C"></figure>
+            <p class="surface-desc">How much the fit is allowed to bend toward the training data.
+              Low values keep it cautious and underfit; once the species are already separable,
+              higher values stop changing anything.</p>
+          </div>
+          <div class="col-md-4">
+            <figure class="surface-chart" data-chart="max_iter"></figure>
+            <p class="surface-desc">How many passes the optimiser is allowed. Too few and the fit
+              is cut short before it settles &mdash; this is what the convergence warning above
+              is about.</p>
+          </div>
+          <div class="col-md-4">
+            <figure class="surface-chart" data-chart="test_size"></figure>
+            <p class="surface-desc">Share of the 150 flowers held back for scoring instead of
+              training. A bigger held-out set scores more reliably but leaves less to learn from.</p>
+          </div>
         </div>
         <p class="surface-readout mb-0 mt-3">
           Accuracy at these settings:
           <span class="num" id="surface-estimate" style="font-size: 1.3rem;"></span>
           <span id="surface-approx" style="color: var(--ink-soft); font-size: .85rem;"></span>
         </p>
-        {% if not surface.matches_context %}
-          <p class="mb-0 mt-2" style="font-size: .82rem; color: var(--ink-soft);">
-            These curves were computed for
-            <span class="num">{{ surface.context.features|join:", " }}</span>
-            at split seed <span class="num">{{ surface.context.random_state }}</span>,
-            which is no longer what you have selected. The shapes still describe how the
-            settings behave, but for that earlier combination. Retraining always reports
-            your real accuracy.
-          </p>
-        {% endif %}
+        <p class="mb-0 mt-2" style="font-size: .8rem; color: var(--ink-soft);">
+          The shapes come from a one-time reference fit
+          (seed <span class="num">{{ surface.context.random_state }}</span> on
+          <span class="num">{{ surface.context.features|join:", " }}</span>), then shifted so the
+          dot always lands on your real accuracy above. The further a slider moves from where it
+          started, the more that shift is doing the work &mdash; retraining always reports the
+          true number.
+        </p>
       </div>
       {{ surface|json_script:"surface-data" }}
     {% endif %}
@@ -222,6 +243,7 @@
       (pts.length > 1
         ? '<polygon class="conv-area" points="' + X0 + ',' + YBOT + ' ' + pts.join(' ') + ' ' + x(visible.length - 1) + ',' + YBOT + '"/>'
         : '') +
+      '<text class="conv-tick" x="' + X0 + '" y="' + (YTOP + 6) + '">100%</text>' +
       '<line class="conv-chance" x1="' + X0 + '" y1="' + y(CHANCE) + '" x2="' + X1 + '" y2="' + y(CHANCE) + '"/>' +
       '<text class="conv-tick" x="' + X1 + '" y="' + (y(CHANCE) - 3) + '" text-anchor="end">chance</text>' +
       '<polyline class="conv-line" points="' + pts.join(' ') + '"/>' +
@@ -270,6 +292,7 @@
     display: flex; justify-content: space-between; align-items: baseline;
     font-size: .78rem; color: var(--ink-soft); margin-bottom: .2rem;
   }
+  .surface-desc { font-size: .78rem; color: var(--ink-soft); margin: .5rem 0 0; }
   .surface-chart svg { width: 100%; height: auto; display: block; }
   .surface-line { fill: none; stroke: var(--iris); stroke-width: 1.6; }
   .surface-area { fill: var(--iris); opacity: .07; }
@@ -293,6 +316,16 @@
   var index = Object.assign({}, surface.current);
   var NUMERIC = ['C', 'max_iter', 'test_size'];
 
+  // The baked grid is a one-time fit at a fixed seed and set of
+  // measurements; the user's real configuration is neither, once they have
+  // changed either. Rather than show two numbers that disagree — the exact
+  // one in the retrain banner and a stale one here — every reading off the
+  // grid is shifted by this constant, measured once so that the point the
+  // sliders currently sit at reproduces the true accuracy exactly. Moving a
+  // slider then still traces the reference fit's shape, just anchored to
+  // reality instead of to seed 7.
+  var calibration = 0;
+
   var inputs = {};
   document.querySelectorAll('[data-axis]').forEach(function (el) {
     inputs[el.dataset.axis] = el;
@@ -302,10 +335,16 @@
   var missing = NUMERIC.concat(['solver']).some(function (a) { return !inputs[a]; });
   if (missing) return;
 
-  // Accuracy at the current position, with any axes overridden.
-  function accuracyAt(overrides) {
+  // Raw grid value, before calibration. What the reference fit actually
+  // scored at this position.
+  function gridAccuracyAt(overrides) {
     var at = Object.assign({}, index, overrides || {});
     return surface.accuracy[at.solver][at.C][at.max_iter][at.test_size];
+  }
+
+  // What the charts draw: the grid's shape, anchored to the real number.
+  function accuracyAt(overrides) {
+    return Math.min(1, Math.max(0, gridAccuracyAt(overrides) + calibration));
   }
 
   function nearest(values, target) {
@@ -347,6 +386,7 @@
     var svg =
       '<svg viewBox="0 0 100 58" role="img" aria-label="accuracy across ' + axis + '">' +
       '<polygon class="surface-area" points="' + X0 + ',' + YBOT + ' ' + points.join(' ') + ' ' + X1 + ',' + YBOT + '"/>' +
+      '<text class="surface-tick" x="' + X0 + '" y="' + (YTOP + 3) + '">100%</text>' +
       '<line class="surface-chance" x1="' + X0 + '" y1="' + y(CHANCE) + '" x2="' + X1 + '" y2="' + y(CHANCE) + '"/>' +
       // Anchored right: every curve enters from the bottom left, which is
       // exactly where this line sits.
@@ -408,6 +448,11 @@
     var found = axes.solver.indexOf(inputs.solver.value);
     if (found !== -1) { index.solver = found; redraw(); }
   });
+
+  var liveAccuracy = parseFloat(panel.dataset.liveAccuracy) / 100;
+  if (!Number.isNaN(liveAccuracy)) {
+    calibration = liveAccuracy - gridAccuracyAt();
+  }
 
   panel.hidden = false;
   redraw();
