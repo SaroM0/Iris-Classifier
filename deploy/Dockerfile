@@ -27,6 +27,42 @@ RUN pip install --no-cache-dir -r requirements-lambda.txt
 # db.sqlite3 ships as the read-only seed that settings_prod copies to /tmp.
 COPY mysite/ /var/task/
 
+# Everything preparing the seed database runs against the development
+# settings on purpose: those point the database at BASE_DIR/db.sqlite3, the
+# seed baked into the image, whereas settings_prod points at the /tmp copy
+# that this build would then throw away. Set per command rather than with
+# ENV, which would leak into the running container and serve production
+# with DEBUG on.
+RUN DJANGO_SETTINGS_MODULE=mysite.settings python manage.py migrate --noinput
+
+# db.sqlite3 is whatever state the developer's machine left it in, so the
+# configuration row could hold any past experiment. Reset it to the
+# baseline so every deployment starts from the same known accuracy rather
+# than from someone's half-finished tuning session.
+RUN DJANGO_SETTINGS_MODULE=mysite.settings python manage.py shell -c "\
+from myapp.models import ModelConfiguration; \
+from myapp import training; \
+c = ModelConfiguration.load(); \
+[setattr(c, k, v) for k, v in training.DEFAULTS.items() if k != 'features']; \
+[setattr(c, 'use_' + f, f in training.DEFAULTS['features']) for f in training.FEATURE_KEYS]; \
+c.save(); \
+print('configuration reset to defaults, seed =', c.random_state)"
+
+# The accounts this project ships with have hashed passwords that were
+# distributed privately, so nobody can log in to a fresh deployment. This
+# adds one account with a known password for the demo.
+#
+# Deliberately not staff and not superuser: the credentials are public, so
+# the account can use the classifier but cannot reach /admin/.
+ARG DEMO_USER=demo
+ARG DEMO_PASSWORD=iris-demo-2026
+RUN DJANGO_SETTINGS_MODULE=mysite.settings python manage.py shell -c "\
+from django.contrib.auth.models import User; \
+u, _ = User.objects.get_or_create(username='$DEMO_USER'); \
+u.set_password('$DEMO_PASSWORD'); \
+u.is_staff = False; u.is_superuser = False; u.save(); \
+print('demo account ready:', u.username)"
+
 # Baked into the image so no request pays for it. The key here is used only
 # by this command; the real one arrives as an environment variable.
 RUN DJANGO_SECRET_KEY=build-only python manage.py collectstatic --noinput

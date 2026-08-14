@@ -30,13 +30,24 @@ FEATURE_KEYS = ['sepal_length', 'sepal_width', 'petal_length', 'petal_width']
 # Every one of these supports the l2 penalty, so any choice stays valid
 SOLVERS = ['lbfgs', 'liblinear', 'newton-cg', 'saga']
 
-# The baseline: reproduces the model this project originally shipped
+# The baseline the configuration page starts from and resets to.
+#
+# The seed is 7 rather than the conventional 42 on purpose. Iris is close to
+# linearly separable on the petals, so with seed 42 this split scores 100%
+# across nearly the whole range the page allows: every test_size from 0.05
+# to 0.5, every solver, C from 0.1 to 1000. A user could move any control
+# and watch nothing happen, with no room to improve on a perfect score.
+#
+# Seed 7 starts at 86.7% and responds in both directions: raising test_size
+# reaches 94.7%, while a weak C, too few iterations or dropping the petals
+# all visibly degrade it. Nothing about the model changed, only which
+# flowers land in the held-out split.
 DEFAULTS = {
     'C': 1.0,
     'max_iter': 1000,
     'solver': 'lbfgs',
     'test_size': 0.2,
-    'random_state': 42,
+    'random_state': 7,
     'features': list(FEATURE_KEYS),
 }
 
