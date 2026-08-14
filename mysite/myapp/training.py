@@ -157,6 +157,35 @@ def train_and_evaluate(config):
     return model, metrics
 
 
+# Where a fit is cut short to trace how it settles. Dense at the start,
+# because that is where the model is still visibly changing its mind.
+CONVERGENCE_CUTS = [1, 2, 3, 5, 8, 13, 21, 34, 55, 100, 300]
+
+
+def convergence_trajectory(config):
+    """Accuracy of this configuration when stopped early, at each cut.
+
+    Each entry is a separate fit rather than a snapshot of one run:
+    LogisticRegression keeps no per-iteration history, so the honest way to
+    show a model settling is to train it again with a lower ceiling and
+    score what it had reached by then. The last entry always uses the
+    configured limit, so the trajectory ends on the accuracy the app
+    reports everywhere else.
+    """
+    limit = config['max_iter']
+    steps = [cut for cut in CONVERGENCE_CUTS if cut < limit] + [limit]
+
+    trajectory = []
+    for iterations in steps:
+        _, metrics = train_and_evaluate(dict(config, max_iter=iterations))
+        trajectory.append({
+            'iterations': iterations,
+            'accuracy': round(metrics['accuracy'], 4),
+            'converged': metrics['converged'],
+        })
+    return trajectory
+
+
 def predict_one(model, config, measurements):
     """Run one flower through `model`, using only the configured features."""
     indices = feature_indices(config['features'])

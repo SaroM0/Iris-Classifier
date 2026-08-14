@@ -74,10 +74,16 @@ def configuration(request):
             # No cache clearing needed: the classifier re-fingerprints the
             # configuration on every call, so this already reflects the save.
             accuracy_after = classifier.accuracy_now()
-            # Survives the redirect so refreshing the page cannot resubmit
+            # Survives the redirect so refreshing the page cannot resubmit.
+            # The trajectory rides along: a dozen extra fits, paid once on
+            # save, so the page can show the fit settling rather than only
+            # announcing where it landed. Kept small deliberately, since in
+            # production sessions are signed into the cookie itself.
             request.session['retrain'] = {
                 'before': round(accuracy_before * 100, 1),
                 'after': round(accuracy_after * 100, 1),
+                'trajectory': training.convergence_trajectory(
+                    ModelConfiguration.load().as_training_config()),
             }
             return redirect('configuration')
     else:

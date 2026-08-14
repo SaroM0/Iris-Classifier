@@ -55,6 +55,38 @@ class TrainingTests(TestCase):
         with self.assertRaises(ValueError):
             training.train_and_evaluate(dict(training.DEFAULTS, features=[]))
 
+    def test_trajectory_ends_on_the_configured_limit(self):
+        trajectory = training.convergence_trajectory(training.DEFAULTS)
+        _, metrics = training.train_and_evaluate(training.DEFAULTS)
+
+        self.assertEqual(trajectory[-1]['iterations'],
+                         training.DEFAULTS['max_iter'])
+        # The animation must land on the number the rest of the page reports
+        self.assertAlmostEqual(trajectory[-1]['accuracy'],
+                               metrics['accuracy'], places=4)
+
+    def test_trajectory_steps_ascend_and_stay_within_the_limit(self):
+        trajectory = training.convergence_trajectory(
+            dict(training.DEFAULTS, max_iter=20))
+        steps = [entry['iterations'] for entry in trajectory]
+
+        self.assertEqual(steps, sorted(steps))
+        self.assertEqual(len(steps), len(set(steps)))
+        self.assertTrue(all(step <= 20 for step in steps))
+
+    def test_a_single_iteration_gives_a_one_point_trajectory(self):
+        trajectory = training.convergence_trajectory(
+            dict(training.DEFAULTS, max_iter=1))
+
+        self.assertEqual([e['iterations'] for e in trajectory], [1])
+
+    def test_trajectory_shows_the_fit_improving(self):
+        trajectory = training.convergence_trajectory(training.DEFAULTS)
+
+        self.assertLess(trajectory[0]['accuracy'], trajectory[-1]['accuracy'])
+        self.assertFalse(trajectory[0]['converged'])
+        self.assertTrue(trajectory[-1]['converged'])
+
 
 class ConfigurationModelTests(TestCase):
     def test_load_creates_a_single_default_row(self):
@@ -359,6 +391,36 @@ class ViewTests(TestCase):
         self.client.post(reverse('configuration'), {'reset': '1'})
 
         self.assertTrue(ModelConfiguration.load().is_default())
+
+    def test_retrain_carries_a_convergence_trajectory(self):
+        response = self.client.post(reverse('configuration'), {
+            'C': 1.0, 'max_iter': 55, 'solver': 'lbfgs',
+            'test_size': 0.2, 'random_state': training.DEFAULTS['random_state'],
+            'use_sepal_length': 'on', 'use_sepal_width': 'on',
+            'use_petal_length': 'on', 'use_petal_width': 'on',
+        }, follow=True)
+
+        trajectory = response.context['retrain']['trajectory']
+        self.assertEqual(trajectory[-1]['iterations'], 55)
+        self.assertAlmostEqual(trajectory[-1]['accuracy'] * 100,
+                               response.context['retrain']['after'], places=1)
+        self.assertContains(response, 'id="convergence-data"')
+
+    def test_trajectory_stays_small_enough_for_a_cookie_session(self):
+        """Production signs sessions into the cookie, capped at 4 KB.
+
+        A trajectory that outgrew that would not error; the session would
+        silently stop persisting, and the retrain banner would vanish.
+        """
+        self.client.post(reverse('configuration'), {
+            'C': 1.0, 'max_iter': 10000, 'solver': 'lbfgs',
+            'test_size': 0.2, 'random_state': training.DEFAULTS['random_state'],
+            'use_sepal_length': 'on', 'use_sepal_width': 'on',
+            'use_petal_length': 'on', 'use_petal_width': 'on',
+        })
+
+        encoded = self.client.session.encode(dict(self.client.session))
+        self.assertLess(len(encoded), 3000, 'trajectory is crowding the cookie')
 
     def test_configuration_page_embeds_the_surface_when_one_exists(self):
         if surface._load() is None:
