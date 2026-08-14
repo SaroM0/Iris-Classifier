@@ -1,9 +1,12 @@
+from pathlib import Path
+from unittest import mock
+
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.urls import reverse
 
-from . import classifier, training
+from . import classifier, surface, training
 from .models import ModelConfiguration
 
 # A textbook setosa and a textbook virginica from the iris dataset
@@ -19,7 +22,10 @@ class TrainingTests(TestCase):
     def test_defaults_train_an_accurate_model(self):
         _, metrics = training.train_and_evaluate(training.DEFAULTS)
 
-        self.assertGreater(metrics['accuracy'], 0.9)
+        # Comfortably above the 33% a coin-flip between three species would
+        # reach. Not higher: the default seed is deliberately one that
+        # leaves the model room to improve and to get worse.
+        self.assertGreater(metrics['accuracy'], 0.8)
         self.assertTrue(metrics['converged'])
         self.assertEqual(metrics['n_train'] + metrics['n_test'], 150)
 
@@ -92,12 +98,12 @@ class ConfigurationModelTests(TestCase):
 
     def test_differences_from_default_lists_only_changes(self):
         configuration = ModelConfiguration.load()
-        configuration.random_state = 7
+        configuration.random_state = 42
         configuration.save()
 
         differences = configuration.differences_from_default()
         self.assertEqual([d['name'] for d in differences], ['random_state'])
-        self.assertEqual(differences[0]['current'], 7)
+        self.assertEqual(differences[0]['current'], 42)
 
 
 class ClassifierTests(TestCase):
@@ -172,6 +178,96 @@ class ClassifierTests(TestCase):
         self.assertEqual(first['confidence'], second['confidence'])
 
 
+class SurfaceTests(TestCase):
+    """The precomputed grid behind the configuration charts.
+
+    Every test skips when no surface has been built, because the file is a
+    build artifact and a fresh checkout legitimately lacks it.
+    """
+
+    def setUp(self):
+        self.data = surface._load()
+        if self.data is None:
+            self.skipTest('no surface built; run manage.py build_surface')
+
+    def test_grid_has_the_shape_its_axes_declare(self):
+        axes = self.data['axes']
+        accuracy = self.data['accuracy']
+
+        self.assertEqual(len(accuracy), len(axes['solver']))
+        self.assertEqual(len(accuracy[0]), len(axes['C']))
+        self.assertEqual(len(accuracy[0][0]), len(axes['max_iter']))
+        self.assertEqual(len(accuracy[0][0][0]), len(axes['test_size']))
+
+    def test_every_cell_is_a_plausible_accuracy(self):
+        for by_c in self.data['accuracy']:
+            for by_iter in by_c:
+                for by_size in by_iter:
+                    for value in by_size:
+                        self.assertIsInstance(value, float)
+                        self.assertGreaterEqual(value, 0.0)
+                        self.assertLessEqual(value, 1.0)
+
+    def test_numeric_axes_ascend(self):
+        for name in ['C', 'max_iter', 'test_size']:
+            values = self.data['axes'][name]
+            self.assertEqual(values, sorted(values), f'{name} is out of order')
+
+    def test_surface_agrees_with_a_real_fit(self):
+        """The one that catches the grid drifting away from the model.
+
+        A stale surface would keep drawing confident curves describing
+        training code that no longer exists.
+        """
+        axes = self.data['axes']
+        # An arbitrary interior point, away from the edges.
+        picked = {'solver': 0, 'C': 8, 'max_iter': 9, 'test_size': 3}
+
+        _, metrics = training.train_and_evaluate({
+            'solver': axes['solver'][picked['solver']],
+            'C': axes['C'][picked['C']],
+            'max_iter': axes['max_iter'][picked['max_iter']],
+            'test_size': axes['test_size'][picked['test_size']],
+            'random_state': self.data['context']['random_state'],
+            'features': self.data['context']['features'],
+        })
+
+        stored = self.data['accuracy'][picked['solver']][picked['C']] \
+                                     [picked['max_iter']][picked['test_size']]
+        self.assertAlmostEqual(metrics['accuracy'], stored, places=4)
+
+    def test_payload_locates_the_current_configuration(self):
+        configuration = ModelConfiguration.load()
+        configuration.solver = 'lbfgs'
+        configuration.C = self.data['axes']['C'][8]
+        configuration.save()
+
+        payload = surface.payload(configuration)
+        self.assertEqual(payload['current']['solver'], 0)
+        self.assertEqual(payload['current']['C'], 8)
+
+    def test_off_grid_values_snap_to_the_nearest_point(self):
+        values = self.data['axes']['C']
+        configuration = ModelConfiguration.load()
+        # Between two grid points, nearer the lower one.
+        configuration.C = values[8] + (values[9] - values[8]) * 0.1
+        configuration.save()
+
+        self.assertEqual(surface.payload(configuration)['current']['C'], 8)
+
+    def test_context_mismatch_is_reported(self):
+        configuration = ModelConfiguration.load()
+        configuration.random_state = self.data['context']['random_state'] + 1
+        configuration.save()
+
+        self.assertFalse(surface.payload(configuration)['matches_context'])
+
+    def test_missing_surface_yields_no_charts(self):
+        with mock.patch.object(surface, '_PATH', Path('/no/such/surface.json')), \
+             mock.patch.dict(surface._cache, {'read': False, 'data': None}):
+            self.assertIsNone(surface.payload(ModelConfiguration.load()))
+
+
 class ViewTests(TestCase):
     def setUp(self):
         User.objects.create_user(username='botanist', password='herbarium-42')
@@ -229,9 +325,12 @@ class ViewTests(TestCase):
                          training.DEFAULTS['C'])
 
     def test_saving_configuration_retrains_and_reports_the_effect(self):
+        # Only the measurements change. Moving the seed at the same time
+        # would reshuffle the split too, and a different split can raise
+        # the score even as the model loses its strongest signal.
         response = self.client.post(reverse('configuration'), {
             'C': 1.0, 'max_iter': 1000, 'solver': 'lbfgs',
-            'test_size': 0.2, 'random_state': 42,
+            'test_size': 0.2, 'random_state': training.DEFAULTS['random_state'],
             'use_sepal_length': 'on', 'use_sepal_width': 'on',
         }, follow=True)
 
@@ -260,6 +359,30 @@ class ViewTests(TestCase):
         self.client.post(reverse('configuration'), {'reset': '1'})
 
         self.assertTrue(ModelConfiguration.load().is_default())
+
+    def test_configuration_page_embeds_the_surface_when_one_exists(self):
+        if surface._load() is None:
+            self.skipTest('no surface built; run manage.py build_surface')
+
+        response = self.client.get(reverse('configuration'))
+        html = response.content.decode()
+
+        self.assertIsNotNone(response.context['surface'])
+        self.assertIn('id="surface-data"', html)
+        # the controls the script attaches sliders to
+        self.assertIn('data-axis="C"', html)
+        self.assertIn('data-axis="test_size"', html)
+
+    def test_configuration_page_works_without_a_surface(self):
+        with mock.patch.object(surface, '_PATH', Path('/no/such/surface.json')), \
+             mock.patch.dict(surface._cache, {'read': False, 'data': None}):
+            response = self.client.get(reverse('configuration'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.context['surface'])
+        self.assertNotContains(response, 'id="surface-data"')
+        # the page itself still does its job
+        self.assertContains(response, 'How it fits')
 
     def test_pages_require_login(self):
         self.client.logout()

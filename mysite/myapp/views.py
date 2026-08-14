@@ -3,7 +3,7 @@ import json
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import redirect, render
 
-from . import classifier, training
+from . import classifier, surface, training
 from .forms import IrisPredictionForm, ModelConfigurationForm
 from .models import ModelConfiguration
 
@@ -87,4 +87,7 @@ def configuration(request):
         'form': form,
         'model': classifier.model_info(),
         'retrain': request.session.pop('retrain', None),
+        # Read from the database rather than from `instance`, which a failed
+        # validation can leave holding values that are not on any grid.
+        'surface': surface.payload(ModelConfiguration.load()),
     })

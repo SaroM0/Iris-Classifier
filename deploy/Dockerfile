@@ -48,6 +48,13 @@ c = ModelConfiguration.load(); \
 c.save(); \
 print('configuration reset to defaults, seed =', c.random_state)"
 
+# Thousands of fits, so that the configuration page can redraw its charts
+# while a slider moves without training anything per request. Must follow
+# the reset above: the grid is built for the measurements and seed the
+# stored configuration holds, and building it against a developer's leftover
+# settings would ship curves describing the wrong model.
+RUN DJANGO_SETTINGS_MODULE=mysite.settings python manage.py build_surface
+
 # The accounts this project ships with have hashed passwords that were
 # distributed privately, so nobody can log in to a fresh deployment. This
 # adds one account with a known password for the demo.

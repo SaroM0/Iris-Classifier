@@ -55,6 +55,8 @@ class ModelConfigurationForm(forms.ModelForm):
     # ...and these decide what it is trained and scored on
     SPLIT_FIELDS = ['test_size', 'random_state']
     FEATURE_FIELDS = [f'use_{key}' for key in training.FEATURE_KEYS]
+    # ...and these are the axes of the precomputed accuracy surface
+    CHART_FIELDS = ['C', 'max_iter', 'test_size', 'solver']
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -62,6 +64,11 @@ class ModelConfigurationForm(forms.ModelForm):
             self.fields[name].widget.attrs.update({'class': 'config-input'})
         self.fields['C'].widget.attrs.update({'step': '0.01'})
         self.fields['test_size'].widget.attrs.update({'step': '0.05'})
+        # The configuration page finds these by attribute and fits a slider
+        # beside each one, so the template needs no per-field markup and the
+        # page degrades to plain number inputs without JavaScript.
+        for name in self.CHART_FIELDS:
+            self.fields[name].widget.attrs['data-axis'] = name
 
     def grouped(self, names):
         """Bound fields for one section of the page, in the given order."""
